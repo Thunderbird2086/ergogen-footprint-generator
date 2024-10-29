@@ -60,6 +60,9 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         return
 
     def modify_rotation(pos: List[str]) -> List[str]:
+        """
+        add ergogen rotation to position identifier
+        """
         if len(pos) < 4:
             pos.append("${p.rot}")
         else:
@@ -81,6 +84,9 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         return pad
 
     def rebuild_mod_data(parsed_data: ParseResults) -> str:
+        """
+        rebuild footprint item while adding ergogen expression if possible
+        """
         result = []
         remapping = {
             '"REF**"': '"${p.ref}"',
@@ -100,6 +106,9 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         return f"({result[0]} {' '.join(map(str, result[1:]))})"
 
     def flatten_to_second_level(parsed_data: ParseResults) -> List[str]:
+        """
+        make footprint item as one line
+        """
         # Function to flatten only up to the second level
         result = []
         one_line = ""
@@ -114,11 +123,15 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         return result
 
     def filters_out(
-        a_target: str, flattened: List[str], options: List[str] = []
+        a_layer: str, flattened: List[str], options: List[str] = []
     ) -> Tuple[List[str], List[str]]:
+        """
+        fitlers out target layer with the given options.
+        This is to avoid misaligned layer.
+        """
         unprocessed, filtered = [], []
         for item in flattened:
-            if a_target not in item:
+            if a_layer not in item:
                 unprocessed.append(item)
                 continue
             if options and not any(an_option in item for an_option in options):
@@ -129,6 +142,9 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         return filtered, unprocessed
 
     def get_layers(flattened: List[str]) -> Dict[str, List[str]]:
+        """
+        collect layers itmes
+        """
         target_layers = [
             "F.Cu",
             "B.Cu",
@@ -164,6 +180,9 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         return layers
 
     def print_stats(layers: Dict[str, List[str]], flattened: List[str]) -> None:
+        """
+        dump status
+        """
         if _LOGGER.getEffectiveLevel() > logging.DEBUG:
             return
         _LOGGER.info("Flattened   :%6d", len(flattened))
@@ -172,8 +191,11 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         _LOGGER.info("Unprocessed :%6d", len(layers["Unprocessed"]))
 
     def get_code_blocks(layers: Dict[str, List[str]]) -> Dict[str, str]:
+        """
+        dump code bloacks
+        """
         target_layers = {
-            "Unprocessed": (
+            "Unprocessed": (    # it could be haeder
                 "standard_opening",
                 "(",
                 "${p.at /* parametric position */}",
@@ -217,6 +239,9 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
     def dump_ergogen_footprint(
         codeblock: Dict[str, str], kicad_mod_file: str, outdir: str
     ) -> None:
+        """
+        dump an ergogen footprint file
+        """
         filename, _ = os.path.splitext(os.path.basename(kicad_mod_file))
         output_file = os.path.join(outdir, f"{filename}.js")
         with open(output_file, "w") as f_out:
@@ -226,6 +251,7 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
                 "    designator: 'X',    // change it accordingly\n"
                 "    side: 'F',          // delete if not needed\n"
                 "    reversible: false,  // delete if not needed\n"
+                "    show_3d: false,     // delete if not needed\n"
             )
             for a_param in params:
                 f_out.write(
@@ -271,7 +297,7 @@ if __name__ == "__main__":
         "file_or_directory", help="Path to the .kicad_mod file or directory to parse"
     )
 
-    parser.add_argument("-o", "--outdir", default="ergogen", help="output directory")
+    parser.add_argument("-o", "--outdir", default="ergogen", help="output directory, default is 'ergogen'")
 
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose mode")
 
