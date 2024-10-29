@@ -30,6 +30,75 @@ options:
 Replace `file_or_directory` with the path to your KiCad footprint module and `OUTDIR` with the desired output path for the Ergogen footprint.<br>
 If `OUTDIR` was omitted, `ergogen` will be used.
 
+## Post Processing
+Once the script dumps an Ergogen footprint, it’s almost ready to use. But it’s good to tweak it a bit. Let’s break it down.
+```javascript
+module.exports = {
+  params: {
+    designator: 'X',    // change it accordingly
+    side: 'F',          // delete if not needed
+    reversible: false,  // delete if not needed
+    show_3d: false,     // delete if not needed
+    P1: {type: 'net', value: 'P1'}, // undefined, // change to undefined as needed
+    P2: {type: 'net', value: 'P2'}, // undefined, // change to undefined as needed
+    ...
+  },
+  body: p => {
+    const standard_opening = `(
+```
+In the params section, `designator` is the component ID on the PCB, so it’s better to change it to something like 'R' for a resistor, 'C' for a capacitor, etc.<br>
+<br>
+If a `padid` must be connected, it should be set to `undefined`, like this:
+```javascript
+  params: {
+    ...
+    P1: {type: 'net', value: 'P1'}, // P1 is optional
+    P2: undefined,                  // P2 must be connected
+    ...
+  },
+```
+Here, `P2` must be connected while `P1` is optional.<br>
+<br>
+Finally, you can add more features like this:
+```javascript
+     ...
+
+    let final = standard_opening;
+    final += front_silkscreen;
+    if (p.reversible || p.side == "F") { //  add items to the front side of the PCB
+        final += front_pads;
+        final += front_fabrication;
+        final += front_mask;
+        final += front_courtyard;
+        final += front_paste;
+    }
+
+    final += pads;
+
+    final += back_silkscreen;
+    if (p.reversible || p.side == "B") { //  add items to the back side of the PCB
+        final += back_pads;
+        final += back_fabrication;
+        final += back_mask;
+        final += back_courtyard;
+        final += back_paste;
+    }
+
+    final += edge_cuts;
+    final += user_drawing;
+    final += user_comments;
+    final += user_eco1;     //  comment out if not needed
+    final += user_eco2;     //  comment out if not needed
+
+    if (p.show_3d) {
+        final += model;
+    }
+
+    final += standard_closing;
+    return final
+  }
+```
+
 ## Contributing
 We welcome contributions! Please fork the repository and submit pull requests. For major changes, please open an issue first to discuss what you would like to change.
 
