@@ -13,7 +13,8 @@ class CustomFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None, style='%'):
         super().__init__(fmt, datefmt, style)
         self.formats = {
-            logging.DEBUG: logging.Formatter("%(asctime)s - %(levelname)8s - %(filename)s:%(lineno)d - %(message)s"),
+            logging.DEBUG: logging.Formatter(
+                "%(asctime)s - %(levelname)8s - %(filename)s:%(lineno)d - %(message)s"),
             logging.INFO: logging.Formatter("%(asctime)s - %(message)s"),
             logging.WARNING: logging.Formatter('%(asctime)s - %(levelnae)s - %(message)s'),
             logging.ERROR: logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'),
@@ -90,6 +91,7 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         result = []
         remapping = {
             '"REF**"': '"${p.ref}"',
+            '"\${REFERENCE}"': '"${p.ref}"',
             # '"F.Silks"': '"${p.side}.Silks"'
         }
         for item in parsed_data:
@@ -98,10 +100,14 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
                 continue
             item = item.replace("${", "\${")
             result.append(remapping.get(item, item))
+
         if "at" == result[0]:
             result = modify_rotation(result)
         elif "pad" == result[0]:
             result = modify_padname(result)
+        elif "property" == result[0] and '"Reference"' == result[1]:
+            result[2] = '"${p.ref}"'
+
         _LOGGER.debug(result)
         return f"({result[0]} {' '.join(map(str, result[1:]))})"
 
@@ -274,6 +280,9 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
 
     # Flatten to the second level
     flattened = flatten_to_second_level(parsed_data[0])
+
+    #for an_item in flattened:
+    #    _LOGGER.info(an_item)
 
     layers = get_layers(flattened)
     print_stats(layers, flattened)
