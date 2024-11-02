@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from enum import StrEnum
 import logging
 import os
 from pyparsing import nestedExpr, ParseResults
@@ -44,23 +45,25 @@ def setup_logger() -> logging.Logger:
 _LOGGER = setup_logger()
 
 
-def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
+class ErgogenSyntaxConverter(object):
     """
-    It converts a kicad_mod file to ergogen footprint file
+    Converts KiCad mod file
     """
-    try:
-        _LOGGER.info("Processing: %s", kicad_mod_file)
-        params = set()
-        with open(kicad_mod_file) as file:
-            mod_content = file.read()
-        # Parse the content
-        parsed_data = nestedExpr("(", ")").parseString(mod_content)
-        _LOGGER.debug(parsed_data)
-    except FileNotFoundError as e:
-        _LOGGER.error("File not found: %s", e)
-        return
+    def __init__(self):
+        self.padnames = set()
+        self.handlers = {
+            "at": self._handle_at,
+            "pad": self._handle_pad,
+            "property": self._handle_property
+        }
 
-    def modify_rotation(pos: List[str]) -> List[str]:
+    def get_padnames(self) -> List[str]:
+        """
+        returns ergogen padnames
+        """
+        return list(self.padnames)
+
+    def _handle_at(self, pos: List[str]) -> List[str]:
         """
         add ergogen rotation to position identifier
         """
@@ -70,7 +73,7 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
             pos[3] = "${" + f"{pos[3]}" + " + p.rot}"
         return pos
 
-    def modify_padname(pad: List[str]) -> List[str]:
+    def _handle_pad(self, pad: List[str]) -> List[str]:
         """
         add prefix of 'P' if pad id starts with a number
         """
@@ -80,11 +83,20 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         pad_id = pad_id.strip('"')
         modified_pad_name = f"P{pad_id}" if pad_id[0].isdigit() else pad_id
         _LOGGER.debug("%s - %s", pad, modified_pad_name)
-        params.add(modified_pad_name)
+        self.padnames.add(modified_pad_name)
         pad.append("${" + f"p.{modified_pad_name}" + "}")
         return pad
 
-    def rebuild_mod_data(parsed_data: ParseResults) -> str:
+    def _handle_property(self, result: List[str]) -> List[str]:
+        """
+        add ergogen reference identifier
+        """
+        if '"Reference"' == result[1]:
+            result[2] = '"${p.ref}"'
+        
+        return result
+
+    def _rebuild_mod_data(self, parsed_data: ParseResults) -> str:
         """
         rebuild footprint item while adding ergogen expression if possible
         """
@@ -96,26 +108,22 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         }
         for item in parsed_data:
             if isinstance(item, ParseResults):
-                result.append(rebuild_mod_data(item))
+                result.append(self._rebuild_mod_data(item))
                 continue
             item = item.replace("${", "\${")
             result.append(remapping.get(item, item))
 
-        if "at" == result[0]:
-            result = modify_rotation(result)
-        elif "pad" == result[0]:
-            result = modify_padname(result)
-        elif "property" == result[0] and '"Reference"' == result[1]:
-            result[2] = '"${p.ref}"'
+        handler = self.handlers.get(result[0], lambda x: x)
+
+        result = handler(result)
 
         _LOGGER.debug(result)
         return f"({result[0]} {' '.join(map(str, result[1:]))})"
 
-    def flatten_to_second_level(parsed_data: ParseResults) -> List[str]:
+    def _make_onelines(self, parsed_data: ParseResults) -> List[str]:
         """
         make footprint item as one line
         """
-        # Function to flatten only up to the second level
         result = []
         one_line = ""
         for item in parsed_data:
@@ -123,11 +131,57 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
                 if one_line:
                     result.append(one_line)
                     one_line = ""
-                result.append(rebuild_mod_data(item))
+                result.append(self._rebuild_mod_data(item))
                 continue
             one_line += f" {item}"
         return result
 
+    def convert(self, kicad_mod_file:str) -> List[str]:
+        try:
+            _LOGGER.info("Processing: %s", kicad_mod_file)
+            with open(kicad_mod_file) as file:
+                mod_content = file.read()
+            # Parse the content
+            parsed_data = nestedExpr("(", ")").parseString(mod_content)
+            _LOGGER.debug(parsed_data)
+        except FileNotFoundError as e:
+            _LOGGER.error("File not found: %s", e)
+
+            return []
+
+        # Flatten to the second level
+        return self._make_onelines(parsed_data[0])
+
+
+class Layers(StrEnum):
+    F_CU = "F.Cu"
+    B_CU = "B.Cu"
+    PAD = "pad"
+    F_SILKS = "F.SilkS"
+    B_SILKS = "B.SilkS"
+    F_FAB = "F.Fab"
+    B_FAB = "B.Fab"
+    F_MASK = "F.Mask"
+    B_MASK = "B.Mask"
+    F_CRTYD = "F.CrtYd"
+    B_CRTYD = "B.CrtYd"
+    F_PASTE = "F.Paste"
+    B_PASTE = "B.Paste"
+    EDGE_CUTS = "Edge.Cuts"
+    DWGS_USER = "Dwgs.User"
+    CMTS_USER = "Cmts.User"
+    ECO1_USER = "Eco1.User"
+    ECO2_USER = "Eco2.User"
+    MODEL = "model" # model is not an actual layer though
+    
+class KiCadModSyntax(StrEnum):
+    OPENING = "Opening"
+    CLOSING = "Closing"
+
+def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
+    """
+    It converts a kicad_mod file to ergogen footprint file
+    """
     def filters_out(
         a_layer: str, flattened: List[str], options: List[str] = []
     ) -> Tuple[List[str], List[str]]:
@@ -151,38 +205,19 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         """
         collect layers itmes
         """
-        target_layers = [
-            "F.Cu",
-            "B.Cu",
-            "pad",
-            "F.SilkS",
-            "B.SilkS",
-            "F.Fab",
-            "B.Fab",
-            "F.Mask",
-            "B.Mask",
-            "F.CrtYd",
-            "B.CrtYd",
-            "F.Paste",
-            "B.Paste",
-            "Edge.Cuts",
-            "Dwgs.User",
-            "Cmts.User",
-            "Eco1.User",
-            "Eco2.User",
-            "model",
-        ]
         options = {
-            "F.Cu": ["pad", "fp_line", "fp_poly", "fp_text"],
-            "B.Cu": ["pad", "fp_line", "fp_poly", "fp_text"],
+            Layers.F_CU: ["pad", "fp_line", "fp_poly", "fp_text"],
+            Layers.B_CU: ["pad", "fp_line", "fp_poly", "fp_text"],
         }
         layers = {}
-        for a_layer in target_layers:
+        for a_layer in Layers:
             filtered, flattened = filters_out(
                 a_layer, flattened, options.get(a_layer, [])
             )
-            layers[a_layer] = filtered
-        layers["Unprocessed"] = flattened
+            if filtered:
+                layers[a_layer] = filtered
+        # assume uprocessd layers belong to opening
+        layers[Layers.OPENING] = flattened
         return layers
 
     def print_stats(layers: Dict[str, List[str]], flattened: List[str]) -> None:
@@ -194,38 +229,38 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         _LOGGER.info("Flattened   :%6d", len(flattened))
         for layer_name, a_layer in layers.items():
             _LOGGER.info("%-12s:%6d", layer_name, len(a_layer))
-        _LOGGER.info("Unprocessed :%6d", len(layers["Unprocessed"]))
+        _LOGGER.info("Unprocessed :%6d", len(layers[Layers.OPENING]))
 
-    def get_code_blocks(layers: Dict[str, List[str]]) -> Dict[str, str]:
+    def get_ergogen_code_blocks(layers: Dict[str, List[str]]) -> Dict[str, str]:
         """
         dump code bloacks
         """
         target_layers = {
-            "Unprocessed": (    # it could be haeder
+            KiCadModSyntax.OPENING: (    # it could be haeder
                 "standard_opening",
                 "(",
-                "${p.at /* parametric position */}",
+                "${p_at /* parametric position */}",
             ),
-            "F.SilkS": ("front_silkscreen", "", ""),
-            "F.Cu": ("front_pads", "", ""),
-            "F.Fab": ("front_fabrication", "", ""),
-            "F.Mask": ("front_mask", "", ""),
-            "F.CrtYd": ("front_courtyard", "", ""),
-            "F.Paste": ("front_paste", "", ""),
-            "pad": ("pads", "", ""),
-            "B.SilkS": ("back_silkscreen", "", ""),
-            "B.Cu": ("back_pads", "", ""),
-            "B.Fab": ("back_fabrication", "", ""),
-            "B.Mask": ("back_mask", "", ""),
-            "B.CrtYd": ("back_courtyard", "", ""),
-            "B.Paste": ("back_paste", "", ""),
-            "Edge.Cuts": ("edge_cuts", "", ""),
-            "Dwgs.User": ("user_drawing", "", ""),
-            "Cmts.User": ("user_comments", "", ""),
-            "Eco1.User": ("user_eco1", "", ""),
-            "Eco2.User": ("user_eco2", "", ""),
-            "model": ("model", "", ""),
-            "Closing": ("standard_closing", "", "    )\n"),
+            Layers.F_SILKS: ("front_silkscreen", "", ""),
+            Layers.F_CU: ("front_pads", "", ""),
+            Layers.F_FAB: ("front_fabrication", "", ""),
+            Layers.F_MASK: ("front_mask", "", ""),
+            Layers.F_CRTYD: ("front_courtyard", "", ""),
+            Layers.F_PASTE: ("front_paste", "", ""),
+            Layers.PAD: ("pads", "", ""),
+            Layers.B_SILKS: ("back_silkscreen", "", ""),
+            Layers.B_CU: ("back_pads", "", ""),
+            Layers.B_FAB: ("back_fabrication", "", ""),
+            Layers.B_MASK: ("back_mask", "", ""),
+            Layers.B_CRTYD: ("back_courtyard", "", ""),
+            Layers.B_PASTE: ("back_paste", "", ""),
+            Layers.EDGE_CUTS: ("edge_cuts", "", ""),
+            Layers.DWGS_USER: ("user_drawing", "", ""),
+            Layers.CMTS_USER: ("user_comments", "", ""),
+            Layers.ECO1_USER: ("user_eco1", "", ""),
+            Layers.ECO2_USER: ("user_eco2", "", ""),
+            Layers.MODEL: ("model", "", ""),
+            KiCadModSyntax.CLOSING: ("standard_closing", "", "    )\n"),
         }
         layers_code_block = {}
         for layer_name in target_layers:
@@ -243,7 +278,7 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         return layers_code_block
 
     def dump_ergogen_footprint(
-        codeblock: Dict[str, str], kicad_mod_file: str, outdir: str
+        padnames: List[str], codeblock: Dict[str, str], kicad_mod_file: str, outdir: str
     ) -> None:
         """
         dump an ergogen footprint file
@@ -259,13 +294,13 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
                 "    reversible: false,  // delete if not needed\n"
                 "    show_3d: false,     // delete if not needed\n"
             )
-            for a_param in params:
+            for a_padname in padnames:
                 f_out.write(
                     (
-                        f"    {a_param}: "
+                        f"    {a_padname}: "
                         "{type: 'net', value: "
-                        f"'{a_param}'"
-                        "}, // undefined, // change to undefined as needed\n"
+                        f"'{a_padname}'"
+                        "}, // undefined}, // change to undefined as needed\n"
                     )
                 )
             f_out.write("  },\n" "  body: p => {\n")
@@ -278,16 +313,17 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
             f_out.write("\n" "    return final\n" "  }\n" "}")
         _LOGGER.info("dumped ergogen footprint, '%s'", output_file)
 
-    # Flatten to the second level
-    flattened = flatten_to_second_level(parsed_data[0])
-
     #for an_item in flattened:
     #    _LOGGER.info(an_item)
 
-    layers = get_layers(flattened)
-    print_stats(layers, flattened)
-    code_blocks = get_code_blocks(layers)
-    dump_ergogen_footprint(code_blocks, kicad_mod_file, outdir)
+    syntax_convertor = ErgogenSyntaxConverter()
+
+    flattened = syntax_convertor.convert(kicad_mod_file)
+    ergogen_layers = get_layers(flattened)
+    print_stats(ergogen_layers, flattened)
+    code_blocks = get_ergogen_code_blocks(ergogen_layers)
+    padnames = syntax_convertor.get_padnames()
+    dump_ergogen_footprint(padnames, code_blocks, kicad_mod_file, outdir)
 
 
 def process_directory(directory_path, outdir):
