@@ -39,8 +39,8 @@ module.exports = {
     side: 'F',          // delete if not needed
     reversible: false,  // delete if not needed
     show_3d: false,     // delete if not needed
-    P1: {type: 'net', value: 'P1'}, // undefined, // change to undefined as needed
-    P2: {type: 'net', value: 'P2'}, // undefined, // change to undefined as needed
+    P1: {type: 'net', value: 'P1'}, // undefined}, // change to undefined as needed
+    P2: {type: 'net', value: 'P2'}, // undefined}, // change to undefined as needed
     ...
   },
   body: p => {
@@ -52,8 +52,8 @@ If a `padid` must be connected, it should be set to `undefined`, like this:
 ```javascript
   params: {
     ...
-    P1: {type: 'net', value: 'P1'}, // P1 is optional
-    P2: undefined,                  // P2 must be connected
+    P1: {type: 'net', value: 'P1'},         // P1 is optional
+    P2: {type: 'net', value: undefined},    // P2 must be connected
     ...
   },
 ```
@@ -64,6 +64,7 @@ Finally, you can add more features like this:
      ...
 
     let final = standard_opening;
+
     final += front_silkscreen;
     if (p.reversible || p.side == "F") { //  add items to the front side of the PCB
         final += front_pads;

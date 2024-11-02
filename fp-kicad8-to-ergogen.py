@@ -11,15 +11,23 @@ class CustomFormatter(logging.Formatter):
     """
     Custom handler to log messages in different formats based on the level
     """
-    def __init__(self, fmt=None, datefmt=None, style='%'):
+
+    def __init__(self, fmt=None, datefmt=None, style="%"):
         super().__init__(fmt, datefmt, style)
         self.formats = {
             logging.DEBUG: logging.Formatter(
-                "%(asctime)s - %(levelname)8s - %(filename)s:%(lineno)d - %(message)s"),
+                "%(asctime)s - %(levelname)8s - %(filename)s:%(lineno)d - %(message)s"
+            ),
             logging.INFO: logging.Formatter("%(asctime)s - %(message)s"),
-            logging.WARNING: logging.Formatter('%(asctime)s - %(levelnae)s - %(message)s'),
-            logging.ERROR: logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'),
-            logging.CRITICAL: logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            logging.WARNING: logging.Formatter(
+                "%(asctime)s - %(levelnae)s - %(message)s"
+            ),
+            logging.ERROR: logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(message)s"
+            ),
+            logging.CRITICAL: logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(message)s"
+            ),
         }
 
     def format(self, record):
@@ -27,6 +35,7 @@ class CustomFormatter(logging.Formatter):
         if formatter is None:
             formatter = self.formats[logging.INFO]
         return formatter.format(record)
+
 
 def setup_logger() -> logging.Logger:
     """
@@ -49,19 +58,14 @@ class ErgogenSyntaxConverter(object):
     """
     Converts KiCad mod file
     """
+
     def __init__(self):
         self.padnames = set()
         self.handlers = {
             "at": self._handle_at,
             "pad": self._handle_pad,
-            "property": self._handle_property
+            "property": self._handle_property,
         }
-
-    def get_padnames(self) -> List[str]:
-        """
-        returns ergogen padnames
-        """
-        return list(self.padnames)
 
     def _handle_at(self, pos: List[str]) -> List[str]:
         """
@@ -93,7 +97,7 @@ class ErgogenSyntaxConverter(object):
         """
         if '"Reference"' == result[1]:
             result[2] = '"${p.ref}"'
-        
+
         return result
 
     def _rebuild_mod_data(self, parsed_data: ParseResults) -> str:
@@ -136,7 +140,7 @@ class ErgogenSyntaxConverter(object):
             one_line += f" {item}"
         return result
 
-    def convert(self, kicad_mod_file:str) -> List[str]:
+    def convert(self, kicad_mod_file: str) -> Tuple[List[str], List[str]]:
         try:
             _LOGGER.info("Processing: %s", kicad_mod_file)
             with open(kicad_mod_file) as file:
@@ -147,10 +151,10 @@ class ErgogenSyntaxConverter(object):
         except FileNotFoundError as e:
             _LOGGER.error("File not found: %s", e)
 
-            return []
+            return [], []
 
         # Flatten to the second level
-        return self._make_onelines(parsed_data[0])
+        return self._make_onelines(parsed_data[0]), list(self.padnames)
 
 
 class Layers(StrEnum):
@@ -172,25 +176,28 @@ class Layers(StrEnum):
     CMTS_USER = "Cmts.User"
     ECO1_USER = "Eco1.User"
     ECO2_USER = "Eco2.User"
-    MODEL = "model" # model is not an actual layer though
-    
+    MODEL = "model"  # model is not an actual layer though
+
+
 class KiCadModSyntax(StrEnum):
     OPENING = "Opening"
     CLOSING = "Closing"
 
-def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
-    """
-    It converts a kicad_mod file to ergogen footprint file
-    """
-    def filters_out(
-        a_layer: str, flattened: List[str], options: List[str] = []
+
+class ErgogenFootPrint(object):
+    def __init__(self, onelines: List[str], padnames: List[str]):
+        self._onelines = onelines
+        self._padnames = padnames
+
+    def _filters_out(
+        self, a_layer: str, onelines: List[str], options: List[str] = []
     ) -> Tuple[List[str], List[str]]:
         """
         fitlers out target layer with the given options.
         This is to avoid misaligned layer.
         """
         unprocessed, filtered = [], []
-        for item in flattened:
+        for item in onelines:
             if a_layer not in item:
                 unprocessed.append(item)
                 continue
@@ -201,7 +208,7 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
             filtered.append(item)
         return filtered, unprocessed
 
-    def get_layers(flattened: List[str]) -> Dict[str, List[str]]:
+    def _get_layers(self, unprocessed: List[str]) -> Dict[str, List[str]]:
         """
         collect layers itmes
         """
@@ -211,35 +218,24 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
         }
         layers = {}
         for a_layer in Layers:
-            filtered, flattened = filters_out(
-                a_layer, flattened, options.get(a_layer, [])
+            filtered, unprocessed = self._filters_out(
+                a_layer, unprocessed, options.get(a_layer, [])
             )
             if filtered:
                 layers[a_layer] = filtered
         # assume uprocessd layers belong to opening
-        layers[Layers.OPENING] = flattened
+        layers[KiCadModSyntax.OPENING] = unprocessed
         return layers
 
-    def print_stats(layers: Dict[str, List[str]], flattened: List[str]) -> None:
-        """
-        dump status
-        """
-        if _LOGGER.getEffectiveLevel() > logging.DEBUG:
-            return
-        _LOGGER.info("Flattened   :%6d", len(flattened))
-        for layer_name, a_layer in layers.items():
-            _LOGGER.info("%-12s:%6d", layer_name, len(a_layer))
-        _LOGGER.info("Unprocessed :%6d", len(layers[Layers.OPENING]))
-
-    def get_ergogen_code_blocks(layers: Dict[str, List[str]]) -> Dict[str, str]:
+    def _make_code_blocks(self, layers: Dict[str, List[str]]) -> Dict[str, str]:
         """
         dump code bloacks
         """
         target_layers = {
-            KiCadModSyntax.OPENING: (    # it could be haeder
+            KiCadModSyntax.OPENING: (  # it could be haeder
                 "standard_opening",
                 "(",
-                "${p_at /* parametric position */}",
+                "${p.at /* parametric position */}",
             ),
             Layers.F_SILKS: ("front_silkscreen", "", ""),
             Layers.F_CU: ("front_pads", "", ""),
@@ -277,8 +273,8 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
             layers_code_block[const_variable] = code_block
         return layers_code_block
 
-    def dump_ergogen_footprint(
-        padnames: List[str], codeblock: Dict[str, str], kicad_mod_file: str, outdir: str
+    def _dump_to_file(
+        self, code_blocks: Dict[str, str], kicad_mod_file: str, outdir: str
     ) -> None:
         """
         dump an ergogen footprint file
@@ -294,7 +290,7 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
                 "    reversible: false,  // delete if not needed\n"
                 "    show_3d: false,     // delete if not needed\n"
             )
-            for a_padname in padnames:
+            for a_padname in self._padnames:
                 f_out.write(
                     (
                         f"    {a_padname}: "
@@ -313,17 +309,33 @@ def parse_kicad_mod(kicad_mod_file: str, outdir: str) -> None:
             f_out.write("\n" "    return final\n" "  }\n" "}")
         _LOGGER.info("dumped ergogen footprint, '%s'", output_file)
 
-    #for an_item in flattened:
+    def _status(self, layers: Dict[str, List[str]]) -> None:
+        """
+        dump status
+        """
+        _LOGGER.debug("Flattened   :%6d", len(self._onelines))
+        for layer_name, a_layer in layers.items():
+            _LOGGER.debug("%-12s:%6d", layer_name, len(a_layer))
+
+    def dump(self, kicad_mod_file: str, outdir: str) -> None:
+        ergogen_layers = self._get_layers(self._onelines)
+        self._status(ergogen_layers)
+        code_blocks = self._make_code_blocks(ergogen_layers)
+        self._dump_to_file(code_blocks, kicad_mod_file, outdir)
+
+
+def convert_kicad_fp_to_ergogen_fp(kicad_mod_file: str, outdir: str) -> None:
+    """
+    It converts a kicad_mod file to ergogen footprint file
+    """
+    # for an_item in flattened:
     #    _LOGGER.info(an_item)
 
     syntax_convertor = ErgogenSyntaxConverter()
+    converted, padnames = syntax_convertor.convert(kicad_mod_file)
 
-    flattened = syntax_convertor.convert(kicad_mod_file)
-    ergogen_layers = get_layers(flattened)
-    print_stats(ergogen_layers, flattened)
-    code_blocks = get_ergogen_code_blocks(ergogen_layers)
-    padnames = syntax_convertor.get_padnames()
-    dump_ergogen_footprint(padnames, code_blocks, kicad_mod_file, outdir)
+    ergogen_footprint = ErgogenFootPrint(converted, padnames)
+    ergogen_footprint.dump(kicad_mod_file, outdir)
 
 
 def process_directory(directory_path, outdir):
@@ -333,7 +345,7 @@ def process_directory(directory_path, outdir):
                 continue
 
             file_path = os.path.join(root, file)
-            parse_kicad_mod(file_path, outdir)
+            convert_kicad_fp_to_ergogen_fp(file_path, outdir)
 
 
 if __name__ == "__main__":
@@ -342,7 +354,12 @@ if __name__ == "__main__":
         "file_or_directory", help="Path to the .kicad_mod file or directory to parse"
     )
 
-    parser.add_argument("-o", "--outdir", default="ergogen", help="output directory, default is 'ergogen'")
+    parser.add_argument(
+        "-o",
+        "--outdir",
+        default="ergogen",
+        help="output directory, default is 'ergogen'",
+    )
 
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose mode")
 
@@ -358,4 +375,4 @@ if __name__ == "__main__":
     if os.path.isdir(args.file_or_directory):
         process_directory(args.file_or_directory, args.outdir)
     else:
-        parse_kicad_mod(args.file_or_directory, args.outdir)
+        convert_kicad_fp_to_ergogen_fp(args.file_or_directory, args.outdir)
