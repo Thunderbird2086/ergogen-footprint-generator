@@ -16,7 +16,8 @@ class CustomFormatter(logging.Formatter):
         super().__init__(fmt, datefmt, style)
         self.formats = {
             logging.DEBUG: logging.Formatter(
-                "%(asctime)s - %(levelname)8s - %(filename)s:%(lineno)d - %(message)s"
+                "%(asctime)s - %(levelname)8s - "
+                "%(filename)s:%(lineno)d - %(message)s"
             ),
             logging.INFO: logging.Formatter("%(asctime)s - %(message)s"),
             logging.WARNING: logging.Formatter(
@@ -141,6 +142,9 @@ class ErgogenSyntaxConverter(object):
         return result
 
     def convert(self, kicad_mod_file: str) -> Tuple[List[str], List[str]]:
+        """
+        converts KiCad footprint items into one line per each
+        """
         try:
             _LOGGER.info("Processing: %s", kicad_mod_file)
             with open(kicad_mod_file) as file:
@@ -158,6 +162,9 @@ class ErgogenSyntaxConverter(object):
 
 
 class Layers(StrEnum):
+    """
+    KiCad layers
+    """
     F_CU = "F.Cu"
     B_CU = "B.Cu"
     PAD = "pad"
@@ -180,6 +187,9 @@ class Layers(StrEnum):
 
 
 class KiCadModSyntax(StrEnum):
+    """
+    mod syntax
+    """
     OPENING = "Opening"
     CLOSING = "Closing"
 
@@ -318,6 +328,9 @@ class ErgogenFootPrint(object):
             _LOGGER.debug("%-12s:%6d", layer_name, len(a_layer))
 
     def dump(self, kicad_mod_file: str, outdir: str) -> None:
+        """
+        dumps ergogen foot print
+        """
         ergogen_layers = self._get_layers(self._onelines)
         self._status(ergogen_layers)
         code_blocks = self._make_code_blocks(ergogen_layers)
@@ -328,9 +341,6 @@ def convert_kicad_fp_to_ergogen_fp(kicad_mod_file: str, outdir: str) -> None:
     """
     It converts a kicad_mod file to ergogen footprint file
     """
-    # for an_item in flattened:
-    #    _LOGGER.info(an_item)
-
     syntax_convertor = ErgogenSyntaxConverter()
     converted, padnames = syntax_convertor.convert(kicad_mod_file)
 
@@ -339,6 +349,10 @@ def convert_kicad_fp_to_ergogen_fp(kicad_mod_file: str, outdir: str) -> None:
 
 
 def process_directory(directory_path, outdir):
+    """
+    converts all kicad_mod files under the given directory
+    to ergogen footprint file
+    """
     for root, _, files in os.walk(directory_path):
         for file in files:
             if not file.endswith(".kicad_mod"):
@@ -349,9 +363,11 @@ def process_directory(directory_path, outdir):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Parse KiCad .kicad_mod files.")
+    parser = argparse.ArgumentParser(
+        description="Parse KiCad .kicad_mod files.")
     parser.add_argument(
-        "file_or_directory", help="Path to the .kicad_mod file or directory to parse"
+        "file_or_directory",
+         help="Path to the .kicad_mod file or directory to parse"
     )
 
     parser.add_argument(
@@ -361,7 +377,8 @@ if __name__ == "__main__":
         help="output directory, default is 'ergogen'",
     )
 
-    parser.add_argument("-v", "--verbose", action="store_true", help="verbose mode")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="verbose mode")
 
     args = parser.parse_args()
 
