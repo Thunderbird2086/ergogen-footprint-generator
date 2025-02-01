@@ -66,6 +66,8 @@ class ErgogenSyntaxConverter(object):
             "at": self._handle_at,
             "pad": self._handle_pad,
             "property": self._handle_property,
+            "tstamp": self._handle_ignore,
+            "uuid": self._handle_ignore,
         }
 
     def _handle_at(self, pos: List[str]) -> List[str]:
@@ -89,17 +91,35 @@ class ErgogenSyntaxConverter(object):
         modified_pad_name = f"P{pad_id}" if pad_id[0].isdigit() else pad_id
         _LOGGER.debug("%s - %s", pad, modified_pad_name)
         self.padnames.add(modified_pad_name)
-        pad.append("${" + f"p.{modified_pad_name}" + "}")
+        pad.append('${' + f'p.{modified_pad_name}' + '}')
         return pad
 
     def _handle_property(self, result: List[str]) -> List[str]:
         """
         add ergogen reference identifier
         """
-        if '"Reference"' == result[1]:
-            result[2] = '"${p.ref}"'
+        _LOGGER.debug(result)
+        if '"Reference"' != result[1]:
+            return result
+
+        result[2] = '"${p.ref}"'
+        result[3:] = [
+            '(layer "${p.side}.SilkS")' if 'layer' in an_item else an_item for an_item in result[3:]]
+        found = [an_item for an_item in result[3:] if 'hide' in an_item]
+        if not found:
+            result[3:] = [
+                item for element in result[3:] for item in (element,
+                'hide') if 'layer' in element or item == element ]
+        result[3:] = [
+            '${p.ref_hide}' if 'hide' in an_item else an_item for an_item in result[3:]]
 
         return result
+
+    def _handle_ignore(self, result: List[str]) -> List[str]:
+        """
+        ignore field
+        """
+        return []
 
     def _rebuild_mod_data(self, parsed_data: ParseResults) -> str:
         """
@@ -108,21 +128,26 @@ class ErgogenSyntaxConverter(object):
         result = []
         remapping = {
             '"REF**"': '"${p.ref}"',
-            '"\${REFERENCE}"': '"${p.ref}"',
             # '"F.Silks"': '"${p.side}.Silks"'
         }
         for item in parsed_data:
+            _LOGGER.debug(item)
             if isinstance(item, ParseResults):
                 result.append(self._rebuild_mod_data(item))
                 continue
             item = item.replace("${", "\${")
+            _LOGGER.debug(item)
             result.append(remapping.get(item, item))
+            _LOGGER.debug(result)
 
         handler = self.handlers.get(result[0], lambda x: x)
 
         result = handler(result)
 
         _LOGGER.debug(result)
+        if not result:
+            return ""
+
         return f"({result[0]} {' '.join(map(str, result[1:]))})"
 
     def _make_onelines(self, parsed_data: ParseResults) -> List[str]:
@@ -266,7 +291,7 @@ class ErgogenFootPrint(object):
             Layers.ECO1_USER: ("user_eco1", "", ""),
             Layers.ECO2_USER: ("user_eco2", "", ""),
             Layers.MODEL: ("model", "", ""),
-            KiCadModSyntax.CLOSING: ("standard_closing", "", "    )\n"),
+            KiCadModSyntax.CLOSING: ("standard_closing", "", "    )"),
         }
         layers_code_block = {}
         for layer_name in target_layers:
