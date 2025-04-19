@@ -21,7 +21,7 @@ class CustomFormatter(logging.Formatter):
             ),
             logging.INFO: logging.Formatter("%(asctime)s - %(message)s"),
             logging.WARNING: logging.Formatter(
-                "%(asctime)s - %(levelnae)s - %(message)s"
+                "%(asctime)s - %(levelname)s - %(message)s"
             ),
             logging.ERROR: logging.Formatter(
                 "%(asctime)s - %(levelname)s - %(message)s"
@@ -31,7 +31,7 @@ class CustomFormatter(logging.Formatter):
             ),
         }
 
-    def format(self, record):
+    def format(self, record) -> str:
         formatter = self.formats.get(record.levelno)
         if formatter is None:
             formatter = self.formats[logging.INFO]
@@ -108,8 +108,8 @@ class ErgogenSyntaxConverter(object):
         found = [an_item for an_item in result[3:] if 'hide' in an_item]
         if not found:
             result[3:] = [
-                item for element in result[3:] for item in (element,
-                'hide') if 'layer' in element or item == element ]
+                an_item for an_element in result[3:] for an_item in (an_element,
+                'hide') if 'layer' in an_element or an_item == an_element ]
         result[3:] = [
             '${p.ref_hide}' if 'hide' in an_item else an_item for an_item in result[3:]]
 
@@ -259,12 +259,16 @@ class ErgogenFootPrint(object):
             if filtered:
                 layers[a_layer] = filtered
         # assume uprocessd layers belong to opening
-        layers[KiCadModSyntax.OPENING] = unprocessed
+        layers[KiCadModSyntax.OPENING] = [an_item.replace(
+            '(layer "F.Cu")', '(layer "${p.side}.Cu")').replace(
+            '(layer "B.Cu")', '(layer "${p.side}.Cu")') for an_item in unprocessed]
+        _LOGGER.debug(layers[KiCadModSyntax.OPENING])
+
         return layers
 
     def _make_code_blocks(self, layers: Dict[str, List[str]]) -> Dict[str, str]:
         """
-        dump code bloacks
+        dump code blocks
         """
         target_layers = {
             KiCadModSyntax.OPENING: (  # it could be haeder
