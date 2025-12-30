@@ -76,6 +76,11 @@ class ErgogenSyntaxConverter(object):
         """
         if len(pos) < 4:
             pos.append("${p.rot}")
+        elif "locked" == pos[3].lower():
+            # Don't add p.rot if locked
+            pass
+        elif "unlocked" == pos[3].lower():
+            pos[3] = "${p.rot}"
         else:
             pos[3] = "${" + f"{pos[3]}" + " + p.rot}"
         return pos
