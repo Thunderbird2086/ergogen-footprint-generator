@@ -3,7 +3,7 @@ import argparse
 from enum import StrEnum
 import logging
 import os
-from pyparsing import nestedExpr, ParseResults
+from pyparsing import nested_expr, ParseResults
 from typing import List, Tuple, Dict
 
 
@@ -76,6 +76,11 @@ class ErgogenSyntaxConverter(object):
         """
         if len(pos) < 4:
             pos.append("${p.rot}")
+        elif "locked" == pos[3].lower():
+            # Don't add p.rot if locked
+            pass
+        elif "unlocked" == pos[3].lower():
+            pos[3] = "${p.rot}"
         else:
             pos[3] = "${" + f"{pos[3]}" + " + p.rot}"
         return pos
@@ -135,7 +140,7 @@ class ErgogenSyntaxConverter(object):
             if isinstance(item, ParseResults):
                 result.append(self._rebuild_mod_data(item))
                 continue
-            item = item.replace("${", "\${")
+            item = item.replace("${", r"\${")
             _LOGGER.debug(item)
             result.append(remapping.get(item, item))
             _LOGGER.debug(result)
@@ -175,7 +180,7 @@ class ErgogenSyntaxConverter(object):
             with open(kicad_mod_file) as file:
                 mod_content = file.read()
             # Parse the content
-            parsed_data = nestedExpr("(", ")").parseString(mod_content)
+            parsed_data = nested_expr("(", ")").parse_string(mod_content)
             _LOGGER.debug(parsed_data)
         except FileNotFoundError as e:
             _LOGGER.error("File not found: %s", e)

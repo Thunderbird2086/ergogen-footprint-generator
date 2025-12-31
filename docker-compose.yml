@@ -1,0 +1,10 @@
+services:
+  converter:
+    build: .
+    image: ergogen-converter:latest
+    volumes:
+      - ./input:/input
+      - ./output:/app/ergogen
+    working_dir: /app
+    # Override with: docker compose run converter <args>
+    # Example: docker compose run converter /input/footprint.kicad_mod -o /app/ergogen

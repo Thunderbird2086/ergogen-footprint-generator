@@ -10,6 +10,8 @@ The Ergogen Footprint Generator is a Python tool designed to convert KiCad footp
 * Open Source: Licensed under GPL-3.0, ensuring freedom to use, modify, and distribute.
 
 ## Usage
+
+### Standalone
 To convert a KiCad footprint module to an Ergogen footprint, use the following command:
 ```bash
 $ python3 fp-kicad8-to-ergogen.py -h
@@ -29,6 +31,43 @@ options:
 
 Replace `file_or_directory` with the path to your KiCad footprint module and `OUTDIR` with the desired output path for the Ergogen footprint.<br>
 If `OUTDIR` was omitted, `ergogen` will be used.
+
+### Docker
+You can also run the converter in a Docker container for consistency across different environments.
+
+#### Setup
+1. **Build the Docker image:**
+   ```bash
+   docker compose build
+   ```
+
+2. **Create input/output directories:**
+   ```bash
+   mkdir -p input output
+   ```
+
+3. **Place your KiCad footprint files in the `input` directory:**
+   ```bash
+   cp /path/to/your/footprint.kicad_mod input/
+   ```
+
+#### Run the Converter
+Convert a single file:
+```bash
+docker compose run converter /input/footprint.kicad_mod
+```
+
+Convert all files in a directory:
+```bash
+docker compose run converter /input -o /app/ergogen
+```
+
+With verbose output:
+```bash
+docker compose run converter /input -v
+```
+
+The results will be in the `output/` directory.
 
 ## Post Processing
 Once the script dumps an Ergogen footprint, it’s almost ready to use. But it’s good to tweak it a bit. Let’s break it down.
